@@ -43,44 +43,6 @@ router.post('/', async (req, res) => {
   const ownerId = getOwnerId(req, res);
 
   try {
-    const { rows: tripRows } = await db.query(
-      `SELECT route_schedule_id FROM trips WHERE id = ? LIMIT 1`,
-      [tripId]
-    );
-    if (!tripRows.length) {
-      return res.status(404).json({ error: 'Cursa nu există.' });
-    }
-    const scheduleId = Number(tripRows[0].route_schedule_id);
-
-    const { rows: seatRows } = await db.query(
-      `SELECT s.id
-         FROM seats s
-         JOIN trip_vehicles tv ON tv.vehicle_id = s.vehicle_id
-        WHERE s.id = ?
-          AND tv.trip_id = ?
-        LIMIT 1`,
-      [seatId, tripId]
-    );
-    if (!seatRows.length) {
-      return res.status(400).json({ error: 'Locul nu aparține acestei curse.' });
-    }
-
-    const isPublicRequest = !!req.publicUser && !req.user;
-    if (isPublicRequest && Number.isInteger(scheduleId) && scheduleId > 0) {
-      const { rows: blockedRows } = await db.query(
-        `SELECT 1
-           FROM route_schedule_seat_blocks
-          WHERE route_schedule_id = ?
-            AND seat_id = ?
-            AND block_online = 1
-          LIMIT 1`,
-        [scheduleId, seatId]
-      );
-      if (blockedRows.length) {
-        return res.status(409).json({ error: 'Loc indisponibil pentru rezervări online.' });
-      }
-    }
-
     const existing = await db.query(
       `SELECT id, user_id FROM reservation_intents WHERE trip_id = ? AND seat_id = ? LIMIT 1`,
       [tripId, seatId]
