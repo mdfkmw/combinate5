@@ -211,29 +211,15 @@ router.get('/:id/schedules', async (req, res) => {
   try {
     const routeId = Number(req.params.id);
     if (!routeId) return res.status(400).json({ error: 'invalid route id' });
-    const includeDefaults = ['1', 'true', 'yes'].includes(String(req.query.include_defaults || '').toLowerCase());
-    const extraSelect = includeDefaults
-      ? `,
-         d.vehicle_id   AS default_vehicle_id,
-         dv.name        AS default_vehicle_name,
-         dv.plate_number AS default_vehicle_plate`
-      : '';
-    const extraJoin = includeDefaults
-      ? `
-         LEFT JOIN route_schedule_default_vehicles d ON d.route_schedule_id = rs.id
-         LEFT JOIN vehicles dv ON dv.id = d.vehicle_id`
-      : '';
     const { rows } = await db.query(
-      `SELECT
+      `SELECT 
          rs.id,
          TIME_FORMAT(rs.departure, '%H:%i') AS departure,
          rs.direction,
          rs.operator_id,
          o.name AS operator_name
-         ${extraSelect}
        FROM route_schedules rs
        LEFT JOIN operators o ON o.id = rs.operator_id
-       ${extraJoin}
        WHERE rs.route_id = ?
        ORDER BY rs.departure`,
       [routeId]
@@ -243,10 +229,7 @@ router.get('/:id/schedules', async (req, res) => {
       departure: r.departure,
       direction: r.direction,
       operator_id: r.operator_id,
-      operator_name: r.operator_name || null,
-      default_vehicle_id: includeDefaults && r.default_vehicle_id != null ? Number(r.default_vehicle_id) : null,
-      default_vehicle_name: includeDefaults ? r.default_vehicle_name || null : undefined,
-      default_vehicle_plate: includeDefaults ? r.default_vehicle_plate || null : undefined,
+      operator_name: r.operator_name || null
     })));
   } catch (err) {
     console.error('GET /api/routes/:id/schedules', err);
