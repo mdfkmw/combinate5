@@ -620,26 +620,6 @@ async function computeSeatAvailability(client, {
   const trip = await loadTripBasics(client, tripId);
   if (!trip) return null;
 
-  const { rows: blockRows } = await execQuery(
-    client,
-    `SELECT vehicle_id, seat_id, block_online
-       FROM route_schedule_seat_blocks
-      WHERE route_schedule_id = ?`,
-    [trip.schedule_id]
-  );
-  const blockedByVehicle = new Map();
-  for (const row of blockRows) {
-    if (!row.block_online) continue;
-    const vehicleId = Number(row.vehicle_id);
-    if (!Number.isFinite(vehicleId)) continue;
-    const seatId = Number(row.seat_id);
-    if (!Number.isFinite(seatId)) continue;
-    if (!blockedByVehicle.has(vehicleId)) {
-      blockedByVehicle.set(vehicleId, new Set());
-    }
-    blockedByVehicle.get(vehicleId).add(seatId);
-  }
-
   const stationSeq = await loadTripStationSequences(client, tripId);
   const boardSeq = stationSeq.get(Number(boardStationId));
   const exitSeq = stationSeq.get(Number(exitStationId));
@@ -737,8 +717,6 @@ async function computeSeatAvailability(client, {
 
     const seatList = [];
 
-    const vehicleBlockedSeats = blockedByVehicle.get(Number(veh.vehicle_id)) || new Set();
-
     for (const seat of seatRows) {
       const passengers = seatReservations.get(Number(seat.id)) || [];
       let isAvailable = true;
@@ -794,13 +772,7 @@ async function computeSeatAvailability(client, {
         if (status === 'free') status = 'partial';
       }
 
-      const blockedOnline = vehicleBlockedSeats.has(Number(seat.id));
-      if (blockedOnline) {
-        isAvailable = false;
-        status = 'blocked';
-      }
-
-      const selectable = isAvailable && !heldByOther && !blockedOnline;
+      const selectable = isAvailable && !heldByOther;
       const countsAsAvailable = selectable && !heldByMe;
 
       if (seat.seat_type !== 'driver' && seat.seat_type !== 'guide' && countsAsAvailable) {
@@ -815,10 +787,9 @@ async function computeSeatAvailability(client, {
           seat_col: seat.seat_col,
           seat_type: seat.seat_type,
           seat_number: seat.seat_number,
-          status: blockedOnline ? 'blocked' : status,
+          status,
           is_available: selectable,
           hold_status: heldByMe ? 'mine' : heldByOther ? 'other' : null,
-          blocked_online: blockedOnline,
         });
       }
     }
@@ -1760,24 +1731,6 @@ router.post('/reservations', async (req, res) => {
       await conn.rollback();
       conn.release();
       return res.status(400).json({ error: 'Cel puțin un loc selectat nu există.' });
-    }
-
-    if (seatIds.length) {
-      const placeholdersBlocked = seatIds.map(() => '?').join(',');
-      const { rows: blockedRows } = await execQuery(
-        conn,
-        `SELECT seat_id
-           FROM route_schedule_seat_blocks
-          WHERE route_schedule_id = ?
-            AND block_online = 1
-            AND seat_id IN (${placeholdersBlocked})`,
-        [trip.schedule_id, ...seatIds]
-      );
-      if (blockedRows.length) {
-        await conn.rollback();
-        conn.release();
-        return res.status(409).json({ error: 'Cel puțin un loc selectat nu poate fi rezervat online.' });
-      }
     }
 
     for (const seat of seatRows) {
