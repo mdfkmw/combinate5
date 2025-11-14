@@ -344,6 +344,7 @@ export default function ReservationPage({ userRole, user }) {
   // ⏰ Programarea selectată pentru cursa aleasă
   const [selectedSchedule, setSelectedSchedule] = useState(null);
   const [selectedDirection, setSelectedDirection] = useState(null);
+  const [scheduleSelectionToken, setScheduleSelectionToken] = useState(0);
   const selectedHour = selectedSchedule?.departure ?? null;
   const selectedScheduleId = (selectedSchedule?.scheduleId ?? selectedSchedule?.id) ?? null;
   const effectiveDirection = selectedSchedule?.direction ?? selectedDirection ?? null;
@@ -1171,6 +1172,12 @@ export default function ReservationPage({ userRole, user }) {
       setPopupPosition(null);
       setMultiPassengerOptions(null);
       setNotesVisibility({});
+      previousSelectionKeyRef.current = null;
+      lastSeatsFetchKeyRef.current = null;
+      lastTvSeatsFetchKeyRef.current = null;
+      if (showLoader) {
+        setScheduleSelectionToken((prev) => prev + 1);
+      }
     };
 
     if (!schedule) {
@@ -2919,7 +2926,7 @@ export default function ReservationPage({ userRole, user }) {
 
   useEffect(() => {
     const dateKey = selectedDate ? format(selectedDate, 'yyyy-MM-dd') : 'nodate';
-    const key = `${selectedRoute?.id ?? 'noroute'}|${selectedScheduleId ?? 'noschedule'}|${selectedHour ?? 'nohour'}|${dateKey}`;
+    const key = `${selectedRoute?.id ?? 'noroute'}|${selectedScheduleId ?? 'noschedule'}|${selectedHour ?? 'nohour'}|${dateKey}|${scheduleSelectionToken}`;
     const previousKey = previousSelectionKeyRef.current;
 
     if (previousKey === key) {
@@ -2939,7 +2946,7 @@ export default function ReservationPage({ userRole, user }) {
     }
 
     previousSelectionKeyRef.current = key;
-  }, [selectedRoute?.id, selectedScheduleId, selectedHour, selectedDate, releaseHeldSeats]);
+  }, [selectedRoute?.id, selectedScheduleId, selectedHour, selectedDate, scheduleSelectionToken, releaseHeldSeats]);
 
   useEffect(() => {
     // Așteptăm să fie încărcate stațiile rutei (altfel nu avem capetele segmentului)
@@ -2953,7 +2960,7 @@ export default function ReservationPage({ userRole, user }) {
 
     // cheie unică (folosește IDs ca să nu depindem de stringuri)
     const fetchKey =
-      `${selectedRoute.id}|${format(selectedDate, 'yyyy-MM-dd')}|${selectedScheduleId ?? 'sid'}|${selectedHour}|${firstStopId}|${lastStopId}|main`;
+      `${selectedRoute.id}|${format(selectedDate, 'yyyy-MM-dd')}|${selectedScheduleId ?? 'sid'}|${selectedHour}|${firstStopId}|${lastStopId}|main|${scheduleSelectionToken}`;
 
     if (lastSeatsFetchKeyRef.current === fetchKey) {
       return; // există deja o cerere identică
@@ -3053,7 +3060,15 @@ export default function ReservationPage({ userRole, user }) {
 
     loadSeats();
     return () => { try { fetchAbortRef.current?.abort(); } catch { } };
-  }, [selectedRoute?.id, selectedScheduleId, selectedHour, selectedDate, stationsKey, effectiveDirection]);
+  }, [
+    selectedRoute?.id,
+    selectedScheduleId,
+    selectedHour,
+    selectedDate,
+    stationsKey,
+    effectiveDirection,
+    scheduleSelectionToken,
+  ]);
   ;
 
 
@@ -3157,7 +3172,7 @@ export default function ReservationPage({ userRole, user }) {
         return null;
       }
 
-      const tvKey = `${current.vehicle_id}|${selectedRoute.id}|${format(selectedDate, 'yyyy-MM-dd')}|${selectedScheduleId ?? 'sid'}|${selectedHour}|${stationsKey}`;
+      const tvKey = `${current.vehicle_id}|${selectedRoute.id}|${format(selectedDate, 'yyyy-MM-dd')}|${selectedScheduleId ?? 'sid'}|${selectedHour}|${stationsKey}|${scheduleSelectionToken}`;
 
       if (!force && lastTvSeatsFetchKeyRef.current === tvKey) {
         return null;
@@ -3217,6 +3232,7 @@ export default function ReservationPage({ userRole, user }) {
       selectedDate,
       selectedScheduleId,
       selectedHour,
+      scheduleSelectionToken,
       hydrateSeatPayload,
     ],
   );
