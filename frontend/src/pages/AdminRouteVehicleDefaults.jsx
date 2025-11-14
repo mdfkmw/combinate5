@@ -12,7 +12,7 @@ function formatScheduleOption(schedule) {
   return pieces.join(' · ');
 }
 
-function SeatBadge({ seat, blocked, onToggle }) {
+function SeatBadge({ seat, blocked, onToggle, positionStyle }) {
   const label = seat.label || seat.seat_number || `#${seat.id}`;
   const isService = seat.seat_type === 'driver' || seat.seat_type === 'guide';
   const className = [
@@ -26,6 +26,7 @@ function SeatBadge({ seat, blocked, onToggle }) {
       className={className}
       onClick={() => !isService && onToggle(seat)}
       disabled={isService}
+      style={positionStyle}
     >
       <span className="font-medium">{label}</span>
       <span className="text-xs text-gray-500">
@@ -54,6 +55,38 @@ export default function AdminRouteVehicleDefaults() {
   const [blockedSeatIds, setBlockedSeatIds] = useState(new Set());
   const [seatsLoading, setSeatsLoading] = useState(false);
   const [feedback, setFeedback] = useState('');
+
+  const seatLayout = useMemo(() => {
+    if (!seats || seats.length === 0) {
+      return null;
+    }
+
+    let minRow = null;
+    let maxRow = null;
+    let maxCol = null;
+
+    seats.forEach((seat) => {
+      const row = Number.isFinite(Number(seat.row)) ? Number(seat.row) : 0;
+      const col = Number.isFinite(Number(seat.seat_col)) ? Number(seat.seat_col) : 1;
+
+      if (minRow === null || row < minRow) minRow = row;
+      if (maxRow === null || row > maxRow) maxRow = row;
+      if (maxCol === null || col > maxCol) maxCol = col;
+    });
+
+    if (minRow === null || maxRow === null || maxCol === null) {
+      return null;
+    }
+
+    const totalRows = maxRow - minRow + 1;
+    const totalCols = maxCol;
+
+    return {
+      minRow,
+      totalRows,
+      totalCols,
+    };
+  }, [seats]);
 
   const selectedSchedule = useMemo(() => {
     if (!selectedScheduleId) return null;
@@ -367,26 +400,38 @@ export default function AdminRouteVehicleDefaults() {
               )}
               {!seatsLoading && seats.length > 0 && (
                 <>
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {seats
-                      .slice()
-                      .sort((a, b) => {
-                        const ra = Number(a.row ?? 0);
-                        const rb = Number(b.row ?? 0);
-                        if (ra !== rb) return ra - rb;
-                        const ca = Number(a.seat_col ?? 0);
-                        const cb = Number(b.seat_col ?? 0);
-                        if (ca !== cb) return ca - cb;
-                        return Number(a.id) - Number(b.id);
-                      })
-                      .map((seat) => (
+                  <div
+                    className="inline-grid gap-2 bg-gray-50 p-4 rounded"
+                    style={{
+                      gridTemplateColumns: seatLayout
+                        ? `repeat(${seatLayout.totalCols}, minmax(60px, 1fr))`
+                        : undefined,
+                      gridTemplateRows: seatLayout
+                        ? `repeat(${seatLayout.totalRows}, auto)`
+                        : undefined,
+                      gridAutoFlow: 'dense',
+                    }}
+                  >
+                    {seats.map((seat) => {
+                      const row = Number.isFinite(Number(seat.row)) ? Number(seat.row) : 0;
+                      const col = Number.isFinite(Number(seat.seat_col)) ? Number(seat.seat_col) : 1;
+                      const rowIndex = seatLayout ? row - seatLayout.minRow + 1 : 1;
+                      const normalizedRow = rowIndex >= 1 ? rowIndex : 1;
+                      const colIndex = col >= 1 ? col : 1;
+
+                      return (
                         <SeatBadge
                           key={seat.id}
-                          seat={seat}
+                          seat={{ ...seat, row, seat_col: colIndex }}
                           blocked={blockedSeatIds.has(seat.id)}
                           onToggle={toggleSeat}
+                          positionStyle={{
+                            gridRow: `${normalizedRow}`,
+                            gridColumn: `${colIndex}`,
+                          }}
                         />
-                      ))}
+                      );
+                    })}
                   </div>
                   <button
                     type="button"

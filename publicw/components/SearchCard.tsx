@@ -90,6 +90,24 @@ export default function SearchCard({ stations, relations, loading = false, onSea
 
   const canSubmit = Boolean(fromStation && toStation && !loading)
 
+  const handleSwapStations = () => {
+    if (!fromStation || !toStation) return
+
+    const newFrom = toStation
+    const reachable = reachableMap.get(newFrom)
+    if (!reachable || reachable.size === 0) {
+      return
+    }
+
+    let newTo: number | null = fromStation
+    if (!reachable.has(fromStation)) {
+      newTo = stations.find((st) => reachable.has(st.id))?.id ?? null
+    }
+
+    setFromStation(newFrom)
+    setToStation(newTo)
+  }
+
   const handleSubmit = () => {
     if (!canSubmit || !fromStation || !toStation) return
     onSearch({ fromStationId: fromStation, toStationId: toStation, date, passengers })
@@ -97,7 +115,9 @@ export default function SearchCard({ stations, relations, loading = false, onSea
 
   return (
     <div className="bg-white/5 shadow-soft rounded-3xl p-4 sm:p-6 md:p-8 ring-1 ring-white/10">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div
+        className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:grid-cols-[minmax(0,1.15fr)_auto_minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1fr)]"
+      >
         <div>
           <label className="block text-xs uppercase tracking-wide text-white/60 mb-2">Plecare din</label>
           <select
@@ -110,6 +130,17 @@ export default function SearchCard({ stations, relations, loading = false, onSea
               <option key={st.id} value={st.id}>{st.name}</option>
             ))}
           </select>
+        </div>
+        <div className="flex items-end justify-center">
+          <button
+            type="button"
+            onClick={handleSwapStations}
+            disabled={!fromStation || !toStation || loading}
+            className="h-[52px] w-[52px] rounded-2xl border border-white/15 bg-white/10 text-white text-lg transition hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Schimbă plecarea cu destinația"
+          >
+            ⇆
+          </button>
         </div>
         <div>
           <label className="block text-xs uppercase tracking-wide text-white/60 mb-2">Destinație</label>

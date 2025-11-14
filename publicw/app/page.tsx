@@ -307,15 +307,15 @@ export default function Page() {
         id="rezervari"
         ref={resultsRef}
       >
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <h2 className="text-2xl md:text-3xl font-bold">Rezultatele căutării</h2>
-          {searchValues && (
+        {searchValues && (
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <h2 className="text-2xl md:text-3xl font-bold">Rezultatele căutării</h2>
             <div className="text-sm text-white/60">
               {stationNameById.get(searchValues.fromStationId) || '—'} →{' '}
               {stationNameById.get(searchValues.toStationId) || '—'} · {formatRoDate(searchValues.date)}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {feedback && feedback.type === 'success' && (
           <div className="mt-6 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 text-emerald-200 px-5 py-4 text-sm">

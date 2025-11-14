@@ -865,8 +865,8 @@ export default function SeatModal({ isOpen, onClose, onConfirm, trip, travelDate
                               ? 'Loc de serviciu'
                               : heldByOther
                               ? 'Alt client rezervă acest loc'
-                              : isBlocked
-                              ? 'Loc indisponibil pentru rezervări online'
+                              : baseUnavailable
+                              ? 'Loc ocupat'
                               : undefined
                           }
                           style={{
