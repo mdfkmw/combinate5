@@ -52,6 +52,7 @@ const discountTypesRouter = require('./routes/discountTypes');
 const priceListsRouter = require('./routes/priceLists');
 const reportsRouter = require('./routes/reports');
 const agenciesRouter = require('./routes/agencies');
+const routeScheduleSettingsRouter = require('./routes/routeScheduleSettings');
 const stationsRouter = require('./routes/stations');
 const cashRouter = require('./routes/cash');
 const fiscalSettingsRouter = require('./routes/fiscalSettings');
@@ -157,6 +158,7 @@ app.use('/api/routes_order', require('./routes/routesOrder'));
 // ✅ Route-time-discounts: montat la /api ca să meargă /api/routes/:id/discounts?time=...
 app.use('/api', routeTimeDiscountsRouter);
 app.use('/api/discount-types', discountTypesRouter);
+app.use('/api/route_schedules', routeScheduleSettingsRouter);
 // ✅ Price-lists: montat la /api (ex: /api/pricing-categories). RBAC fin îl facem în router.
 app.use('/api', priceListsRouter)
 app.use('/api/reports', reportsRouter);
