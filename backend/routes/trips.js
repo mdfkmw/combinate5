@@ -5,6 +5,7 @@ const db = require('../db'); // așteptat să fie mysql2/promise pool
 
 
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { resolveDefaultVehicleId } = require('../utils/scheduleDefaults');
 
 function parseBooleanFlag(value) {
   if (value === true || value === false) return value;
@@ -280,16 +281,11 @@ router.get('/find', async (req, res) => {
       return res.json(findRes[0]);
     }
 
-    // vehicul implicit
-    const { rows: veh} = await db.query(
-      `SELECT id FROM vehicles WHERE operator_id = ? LIMIT 1`,
-      [operator_id]
-    );
-    if (!veh.length) {
-      console.log('[trips/find] NO default vehicle for operator', operator_id);
+    const defaultVehicleId = await resolveDefaultVehicleId(schedule_id, operator_id);
+    if (!defaultVehicleId) {
+      console.log('[trips/find] NO default vehicle for operator', operator_id, 'schedule', schedule_id);
       return res.status(404).json({ error: 'Vehicul default inexistent' });
     }
-    const defaultVehicleId = veh[0].id;
 console.log('[trips/find] default vehicle:', defaultVehicleId);
     // inserăm noul trip
     const ins = await db.query(
@@ -512,12 +508,8 @@ router.post('/autogenerate', async (req, res) => {
 
       // 2️⃣ pentru fiecare program – creează / sincronizează trip + vehicul
       for (const s of schedules) {
-        const { rows: veh } = await db.query(
-          'SELECT id FROM vehicles WHERE operator_id = ? ORDER BY id ASC LIMIT 1',
-          [s.operator_id]
-        );
-        if (!veh.length) continue;
-        const defaultVehicleId = veh[0].id;
+        const defaultVehicleId = await resolveDefaultVehicleId(s.schedule_id, s.operator_id);
+        if (!defaultVehicleId) continue;
 
         // cheie „logică”: route_schedule_id + date + time
         const disabled = s.should_disable ? 1 : 0;

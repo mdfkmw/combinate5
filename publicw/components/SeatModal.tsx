@@ -412,7 +412,8 @@ export default function SeatModal({ isOpen, onClose, onConfirm, trip, travelDate
       const heldByOther = hold === 'other'
       const heldByMe = hold === 'mine'
       const isPartial = seat?.status === 'partial'
-      if (!seat || heldByOther || (!isPartial && !seat.isAvailable && !heldByMe)) {
+      const isBlocked = seat?.status === 'blocked'
+      if (!seat || heldByOther || isBlocked || (!isPartial && !seat.isAvailable && !heldByMe)) {
         toRemove.push(seatId)
       }
     })
@@ -825,7 +826,8 @@ export default function SeatModal({ isOpen, onClose, onConfirm, trip, travelDate
                       const isSelected = selectedSeats.includes(seat.id)
                       const isDriver = seat.seat_type === 'driver' || seat.seat_type === 'guide'
                       const isPartial = seat.status === 'partial'
-                      const baseUnavailable = seat.status === 'full' || (!isPartial && !seat.is_available && !heldByMe)
+                      const isBlocked = seat.status === 'blocked' || seat.blocked_online === true
+                      const baseUnavailable = seat.status === 'full' || isBlocked || (!isPartial && !seat.is_available && !heldByMe)
                       const isUnavailable = isDriver || heldByOther || baseUnavailable
 
                       const baseClasses = [
@@ -855,6 +857,15 @@ export default function SeatModal({ isOpen, onClose, onConfirm, trip, travelDate
                           onClick={() => toggleSeat(seat.id)}
                           disabled={isUnavailable}
                           className={[...baseClasses, stateClasses, isSelected ? 'ring-2 ring-white' : ''].join(' ')}
+                          title={
+                            isDriver
+                              ? 'Loc de serviciu'
+                              : heldByOther
+                              ? 'Alt client rezervă acest loc'
+                              : baseUnavailable
+                              ? 'Loc ocupat'
+                              : undefined
+                          }
                           style={{
                             gridColumnStart: (seat.seat_col || 1),
                             gridRowStart: (seat.row ?? 0) + 1,
