@@ -146,6 +146,18 @@ router.get('/', async (req, res) => {
 
     const allVehicles = [principal, ...dubluri];
 
+    const { rows: blockRows } = await db.query(
+      `SELECT vehicle_id, seat_id, block_online
+         FROM route_schedule_seat_blocks
+        WHERE route_schedule_id = ?`,
+      [trip.route_schedule_id]
+    );
+    const blockedMap = new Map();
+    for (const row of blockRows) {
+      const key = `${row.vehicle_id}:${row.seat_id}`;
+      blockedMap.set(key, row.block_online ? 1 : 0);
+    }
+
     // 🔹 Stațiile
     const stopsRows = await loadStopsForDirection(route_id, tripDirection);
 
@@ -244,7 +256,16 @@ router.get('/', async (req, res) => {
           }
         }
 
-        return { ...seat, is_available: isAvailable, status, passengers: allPassengers };
+        const blockKey = `${veh.vehicle_id}:${seat.id}`;
+        const blockedOnline = blockedMap.has(blockKey) && blockedMap.get(blockKey);
+
+        return {
+          ...seat,
+          is_available: isAvailable,
+          status,
+          passengers: allPassengers,
+          blocked_online: blockedOnline ? 1 : 0,
+        };
       });
     }
 

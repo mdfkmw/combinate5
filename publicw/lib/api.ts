@@ -108,9 +108,10 @@ export interface SeatInfo {
   row: number;
   seat_col: number;
   seat_type: string;
-  status: 'free' | 'partial' | 'full';
+  status: 'free' | 'partial' | 'full' | 'blocked';
   is_available: boolean;
   hold_status?: 'mine' | 'other' | null;
+  blocked_online?: boolean;
 }
 
 export interface SeatVehicle {
