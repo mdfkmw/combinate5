@@ -89,9 +89,10 @@ router.get('/', async (req, res) => {
     const normDirectionHint = directionHint ? normalizeDirection(directionHint) : null;
 
     // 🔹 Caută trip-ul
-    let tripSql = `SELECT t.*, rs.direction
+    let tripSql = `SELECT t.*, rs.direction, pv.vehicle_id AS primary_vehicle_id
                      FROM trips t
                      JOIN route_schedules rs ON rs.id = t.route_schedule_id
+                     LEFT JOIN trip_vehicles pv ON pv.trip_id = t.id AND pv.is_primary = 1
                     WHERE t.route_id = ?
                       AND t.date = DATE(?)`;
     const tripParams = [route_id, date];
@@ -121,8 +122,12 @@ router.get('/', async (req, res) => {
 
     // 🔹 Vehicul principal
     const { rows: principalRows } = await db.query(
-      `SELECT id AS vehicle_id, name AS vehicle_name, plate_number FROM vehicles WHERE id = ?`,
-      [trip.vehicle_id]
+      `SELECT v.id AS vehicle_id, v.name AS vehicle_name, v.plate_number
+         FROM trip_vehicles tv
+         JOIN vehicles v ON v.id = tv.vehicle_id
+        WHERE tv.trip_id = ? AND tv.is_primary = 1
+        LIMIT 1`,
+      [trip.id]
     );
     const principal = principalRows[0];
     if (!principal) {

@@ -93,7 +93,8 @@ router.get('/trips', async (req, res) => {
       FROM trips t
       JOIN route_schedules rs ON rs.id = t.route_schedule_id
       JOIN routes r ON r.id = rs.route_id
-      JOIN vehicles v ON v.id = t.vehicle_id
+      LEFT JOIN trip_vehicles pv ON pv.trip_id = t.id AND pv.is_primary = 1
+      LEFT JOIN vehicles v ON v.id = pv.vehicle_id
       LEFT JOIN reservations res ON res.trip_id = t.id
       LEFT JOIN reservation_pricing rp ON rp.reservation_id = res.id
       LEFT JOIN (

@@ -568,7 +568,7 @@ async function loadTripBasics(client, tripId) {
     SELECT
       t.id,
       t.route_id,
-      t.vehicle_id,
+      pv.vehicle_id,
       t.date,
       DATE_FORMAT(t.time, '%H:%i') AS departure_time,
       t.time,
@@ -577,6 +577,7 @@ async function loadTripBasics(client, tripId) {
       rs.id AS schedule_id
     FROM trips t
     JOIN route_schedules rs ON rs.id = t.route_schedule_id
+    LEFT JOIN trip_vehicles pv ON pv.trip_id = t.id AND pv.is_primary = 1
     WHERE t.id = ?
       AND NOT EXISTS (
         SELECT 1
@@ -648,24 +649,6 @@ async function computeSeatAvailability(client, {
   }
 
   const vehicles = [];
-  const seenVehicleIds = new Set();
-
-  if (trip.vehicle_id) {
-    const { rows } = await execQuery(
-      client,
-      `SELECT id, name, plate_number FROM vehicles WHERE id = ? LIMIT 1`,
-      [trip.vehicle_id]
-    );
-    if (rows.length) {
-      vehicles.push({
-        vehicle_id: rows[0].id,
-        vehicle_name: rows[0].name,
-        plate_number: rows[0].plate_number,
-        is_primary: true,
-      });
-      seenVehicleIds.add(rows[0].id);
-    }
-  }
 
   const { rows: tvRows } = await execQuery(
     client,
@@ -680,23 +663,19 @@ async function computeSeatAvailability(client, {
   );
 
   for (const row of tvRows) {
-    if (seenVehicleIds.has(row.id)) {
-      const idx = vehicles.findIndex((v) => v.vehicle_id === row.id);
-      if (idx !== -1 && row.is_primary && !vehicles[idx].is_primary) {
-        vehicles[idx].is_primary = true;
-      }
-      continue;
-    }
     vehicles.push({
       vehicle_id: row.id,
       vehicle_name: row.name,
       plate_number: row.plate_number,
       is_primary: !!row.is_primary,
     });
-    seenVehicleIds.add(row.id);
   }
 
   if (vehicles.length === 0) return null;
+
+  if (!vehicles.some((v) => v.is_primary)) {
+    vehicles[0].is_primary = true;
+  }
 
   let totalAvailable = 0;
 
@@ -1726,7 +1705,6 @@ router.post('/reservations', async (req, res) => {
     }
 
     const vehicleIds = new Set();
-    if (trip.vehicle_id) vehicleIds.add(Number(trip.vehicle_id));
     const { rows: otherVeh } = await execQuery(
       conn,
       `SELECT vehicle_id FROM trip_vehicles WHERE trip_id = ?`,
