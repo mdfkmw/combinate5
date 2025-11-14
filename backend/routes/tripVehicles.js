@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
-+// toți utilizatorii AUTENTIFICAȚI cu aceste roluri au voie aici
+// toți utilizatorii AUTENTIFICAȚI cu aceste roluri au voie aici
 router.use(requireAuth, requireRole('admin','operator_admin','agent'));
 /* ================================================================
    GET /api/trip-vehicles?trip_id=...
@@ -62,15 +62,27 @@ router.post('/', async (req, res) => {
     }
 
     // inserăm vehiculul
+    const normalizedPrimary = is_primary ? 1 : 0;
     const [insertRes] = await conn.execute(
       `INSERT INTO trip_vehicles (trip_id, vehicle_id, is_primary) VALUES (?, ?, ?)`,
-      [trip_id, vehicle_id, is_primary ? 1 : 0]
+      [trip_id, vehicle_id, normalizedPrimary]
     );
     const insertedId = insertRes.insertId;
 
-    // dacă e primary, actualizăm trip-ul
-    if (is_primary) {
-      await conn.execute(`UPDATE trips SET vehicle_id = ? WHERE id = ?`, [vehicle_id, trip_id]);
+    if (normalizedPrimary) {
+      await conn.execute(
+        `UPDATE trip_vehicles SET is_primary = 0 WHERE trip_id = ? AND id <> ?`,
+        [trip_id, insertedId]
+      );
+      await conn.execute(`UPDATE trip_vehicles SET is_primary = 1 WHERE id = ?`, [insertedId]);
+    } else {
+      const [primaryCount] = await conn.execute(
+        `SELECT COUNT(*) AS cnt FROM trip_vehicles WHERE trip_id = ? AND is_primary = 1`,
+        [trip_id]
+      );
+      if (!primaryCount[0]?.cnt) {
+        await conn.execute(`UPDATE trip_vehicles SET is_primary = 1 WHERE id = ?`, [insertedId]);
+      }
     }
 
     await conn.commit();
@@ -115,18 +127,26 @@ router.patch('/:tvId', async (req, res) => {
       conn.release();
       return res.status(404).json({ error: 'trip_vehicle inexistent' });
     }
-    const { trip_id, vehicle_id } = tv[0];
+    const { trip_id } = tv[0];
 
     if (is_primary !== undefined) {
-      // Resetăm toate celelalte vehicule la non-primary
-      await conn.execute(
-        `UPDATE trip_vehicles SET is_primary = 0 WHERE trip_id = ?`,
-        [trip_id]
-      );
-      await conn.execute(`UPDATE trip_vehicles SET is_primary = 1 WHERE id = ?`, [tvId]);
-
-      // Actualizăm câmpul vehicle_id din trips
-      await conn.execute(`UPDATE trips SET vehicle_id = ? WHERE id = ?`, [vehicle_id, trip_id]);
+      const flag = is_primary ? 1 : 0;
+      if (flag) {
+        await conn.execute(
+          `UPDATE trip_vehicles SET is_primary = 0 WHERE trip_id = ? AND id <> ?`,
+          [trip_id, tvId]
+        );
+        await conn.execute(`UPDATE trip_vehicles SET is_primary = 1 WHERE id = ?`, [tvId]);
+      } else {
+        await conn.execute(`UPDATE trip_vehicles SET is_primary = 0 WHERE id = ?`, [tvId]);
+        const [primaryCount] = await conn.execute(
+          `SELECT COUNT(*) AS cnt FROM trip_vehicles WHERE trip_id = ? AND is_primary = 1`,
+          [trip_id]
+        );
+        if (!primaryCount[0]?.cnt) {
+          await conn.execute(`UPDATE trip_vehicles SET is_primary = 1 WHERE id = ?`, [tvId]);
+        }
+      }
     }
 
     if (notes !== undefined) {
@@ -193,9 +213,14 @@ router.delete('/:tvId', async (req, res) => {
     // ștergere efectivă
     await conn.execute(`DELETE FROM trip_vehicles WHERE id = ?`, [tvId]);
 
-    // dacă era primary, actualizăm câmpul vehicle_id din trips la NULL
     if (is_primary) {
-      await conn.execute(`UPDATE trips SET vehicle_id = NULL WHERE id = ?`, [trip_id]);
+      const [nextPrimary] = await conn.execute(
+        `SELECT id FROM trip_vehicles WHERE trip_id = ? ORDER BY id LIMIT 1`,
+        [trip_id]
+      );
+      if (nextPrimary.length) {
+        await conn.execute(`UPDATE trip_vehicles SET is_primary = 1 WHERE id = ?`, [nextPrimary[0].id]);
+      }
     }
 
     await conn.commit();

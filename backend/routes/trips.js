@@ -156,7 +156,7 @@ router.get('/', async (req, res) => {
         t.date,
         t.time,
         t.route_id,
-        t.vehicle_id,
+        pv.vehicle_id,
         t.boarding_started,
         rs.operator_id  AS trip_operator_id,
         r.name          AS route_name,
@@ -167,7 +167,8 @@ router.get('/', async (req, res) => {
       FROM trips t
       JOIN routes r ON t.route_id = r.id
       JOIN route_schedules rs ON rs.id = t.route_schedule_id
-      JOIN vehicles v ON t.vehicle_id = v.id
+      LEFT JOIN trip_vehicles pv ON pv.trip_id = t.id AND pv.is_primary = 1
+      LEFT JOIN vehicles v ON pv.vehicle_id = v.id
       ${where}
       ORDER BY t.time ASC
     `;
@@ -194,7 +195,8 @@ router.get('/summary', async (_req, res) => {
         v.plate_number
       FROM trips t
       JOIN routes r ON t.route_id = r.id
-      LEFT JOIN vehicles v ON t.vehicle_id = v.id
+      LEFT JOIN trip_vehicles pv ON pv.trip_id = t.id AND pv.is_primary = 1
+      LEFT JOIN vehicles v ON pv.vehicle_id = v.id
       ORDER BY t.date DESC, t.time ASC
     `;
     const { rows } = await db.query(query);
@@ -255,12 +257,20 @@ router.get('/find', async (req, res) => {
 
     // verifică dacă există deja cursa
     const { rows: findRes } = await db.query(
-      `SELECT id, route_id, vehicle_id, date, TIME_FORMAT(time, '%H:%i') AS time, disabled, boarding_started
-         FROM trips
-        WHERE route_schedule_id = ?
-          AND date = DATE(?)
-          AND TIME(time) = TIME(?)
-          AND disabled = 0
+      `SELECT
+          t.id,
+          t.route_id,
+          pv.vehicle_id,
+          t.date,
+          TIME_FORMAT(t.time, '%H:%i') AS time,
+          t.disabled,
+          t.boarding_started
+         FROM trips t
+         LEFT JOIN trip_vehicles pv ON pv.trip_id = t.id AND pv.is_primary = 1
+        WHERE t.route_schedule_id = ?
+          AND t.date = DATE(?)
+          AND TIME(t.time) = TIME(?)
+          AND t.disabled = 0
         LIMIT 1`,
       [schedule_id, date, time5]
     );
@@ -284,30 +294,38 @@ console.log('[trips/find] default vehicle:', defaultVehicleId);
     // inserăm noul trip
     const ins = await db.query(
       `INSERT INTO trips
-         (route_schedule_id, route_id, vehicle_id, date, time)
-       VALUES (?, ?, ?, ?, TIME(?))`,
-      [schedule_id, route_id, defaultVehicleId, date, time5]
+         (route_schedule_id, route_id, date, time)
+       VALUES (?, ?, ?, TIME(?))`,
+      [schedule_id, route_id, date, time5]
     );
     const insertId = ins.insertId;
 console.log('[trips/find] inserted trip id=', insertId);
 
     // citim trip-ul inserat după ID (safe în concurență)
-    const { rows: tripRows} = await db.query(
-      `SELECT id, route_id, vehicle_id, date, TIME_FORMAT(time, '%H:%i') AS time, disabled, boarding_started
-         FROM trips
-        WHERE id = ?`,
-      [insertId]
-    );
-    const trip = tripRows[0];
-
     // populăm trip_vehicles
     await db.query(
       `INSERT INTO trip_vehicles (trip_id, vehicle_id, is_primary)
        VALUES (?, ?, 1)
        ON DUPLICATE KEY UPDATE is_primary = VALUES(is_primary)`,
-      [trip.id, defaultVehicleId]
+      [insertId, defaultVehicleId]
     );
-console.log('[trips/find] ensured trip_vehicles pair:', { trip_id: trip.id, vehicle_id: defaultVehicleId });
+console.log('[trips/find] ensured trip_vehicles pair:', { trip_id: insertId, vehicle_id: defaultVehicleId });
+
+    const { rows: tripRows} = await db.query(
+      `SELECT
+          t.id,
+          t.route_id,
+          pv.vehicle_id,
+          t.date,
+          TIME_FORMAT(t.time, '%H:%i') AS time,
+          t.disabled,
+          t.boarding_started
+         FROM trips t
+         LEFT JOIN trip_vehicles pv ON pv.trip_id = t.id AND pv.is_primary = 1
+        WHERE t.id = ?`,
+      [insertId]
+    );
+    const trip = tripRows[0];
     res.json(trip);
   } catch (err) {
     console.error('Eroare la găsire/creare trip:', err);
@@ -322,17 +340,29 @@ console.log('[trips/find] ensured trip_vehicles pair:', { trip_id: trip.id, vehi
 router.patch('/:id/vehicle', async (req, res) => {
   const tripId = req.params.id;
   const { newVehicleId } = req.body;
+  const targetVehicleId = Number(newVehicleId);
+
+  if (!Number.isInteger(targetVehicleId) || targetVehicleId <= 0) {
+    return res.status(400).json({ error: 'newVehicleId invalid' });
+  }
 
   try {
-    // 1. Preia vechiul vehicle_id din trips
+    // 1. Preia vechiul vehicle_id (vehiculul primar) din trip_vehicles
     const { rows: tripRows } = await db.query(
-      'SELECT vehicle_id FROM trips WHERE id = ?',
+      `SELECT t.id, tv.vehicle_id
+         FROM trips t
+         LEFT JOIN trip_vehicles tv ON tv.trip_id = t.id AND tv.is_primary = 1
+        WHERE t.id = ?
+        LIMIT 1`,
       [tripId]
     );
     if (!tripRows.length) {
       return res.status(404).json({ error: 'Cursa nu există.' });
     }
     const oldVehicleId = tripRows[0].vehicle_id;
+    if (!Number.isInteger(Number(oldVehicleId))) {
+      return res.status(409).json({ error: 'Cursa nu are vehicul principal configurat.' });
+    }
 
     // 2. Ia rezervările active pe cursa asta și vehiculul vechi
     const { rows: reservations } = await db.query(
@@ -350,7 +380,7 @@ router.patch('/:id/vehicle', async (req, res) => {
     for (let { label } of reservations) {
       const { rows: seatRows } = await db.query(
         'SELECT 1 FROM seats WHERE vehicle_id = ? AND label = ? LIMIT 1',
-        [newVehicleId, label]
+        [targetVehicleId, label]
       );
       if (!seatRows.length) missing.push(label);
     }
@@ -369,11 +399,11 @@ router.patch('/:id/vehicle', async (req, res) => {
         // mysql2/promise -> conn.query() returnează [rows, fields], nu { rows }
         const [seat] = await conn.query(
           'SELECT id FROM seats WHERE vehicle_id = ? AND label = ? LIMIT 1',
-          [newVehicleId, label]
+          [targetVehicleId, label]
         );
         // plasă de siguranță (în mod normal e acoperit de verificarea "missing")
         if (!seat || !seat.length) {
-          throw new Error(`Seat with label ${label} not found on vehicle ${newVehicleId}`);
+          throw new Error(`Seat with label ${label} not found on vehicle ${targetVehicleId}`);
         }
         await conn.query(
           'UPDATE reservations SET seat_id = ? WHERE id = ?',
@@ -381,17 +411,35 @@ router.patch('/:id/vehicle', async (req, res) => {
         );
       }
 
-      await conn.query(
-        'UPDATE trips SET vehicle_id = ? WHERE id = ?',
-        [newVehicleId, tripId]
+      const [primaryRows] = await conn.query(
+        `SELECT id, vehicle_id
+           FROM trip_vehicles
+          WHERE trip_id = ? AND is_primary = 1
+          LIMIT 1`,
+        [tripId]
       );
+      if (!primaryRows.length) {
+        throw new Error('Cursa nu are vehicul principal definit.');
+      }
+      const primaryRow = primaryRows[0];
+
+      // targetVehicleId deja validat înainte de a începe tranzacția
+
+      const [duplicateRows] = await conn.query(
+        `SELECT id FROM trip_vehicles
+          WHERE trip_id = ? AND vehicle_id = ?
+          LIMIT 1`,
+        [tripId, targetVehicleId]
+      );
+      if (duplicateRows.length && duplicateRows[0].id !== primaryRow.id) {
+        await conn.query('DELETE FROM trip_vehicles WHERE id = ?', [duplicateRows[0].id]);
+      }
 
       await conn.query(
         `UPDATE trip_vehicles
-            SET vehicle_id = ?
-          WHERE trip_id    = ?
-            AND is_primary = 1`,
-        [newVehicleId, tripId]
+            SET vehicle_id = ?, is_primary = 1
+          WHERE id = ?`,
+        [targetVehicleId, primaryRow.id]
       );
 
       await conn.commit();
@@ -471,9 +519,9 @@ router.post('/autogenerate', async (req, res) => {
         if (!veh.length) continue;
         const defaultVehicleId = veh[0].id;
 
-        // cheie „logică”: route_id + date + time + vehicle_id
+        // cheie „logică”: route_schedule_id + date + time
         const disabled = s.should_disable ? 1 : 0;
-        // NU crea al doilea trip la aceeași (schedule, date, time) — ignorăm vehicle_id
+        // NU crea al doilea trip la aceeași (schedule, date, time)
         const { rows: existsAny } = await db.query(
           `SELECT id FROM trips
              WHERE route_schedule_id = ?
@@ -491,12 +539,12 @@ router.post('/autogenerate', async (req, res) => {
         // în care o altă instanță ar putea insersa același trip și am primi eroarea
         // "duplicate entry" doar uneori. "INSERT IGNORE" închide cursa: dacă o
         // altă instanță a inserat deja rândul, MySQL îl ignoră în liniște fără să
-        // suprascrie vehiculul ales manual.
+        // perturbe asocierile de vehicule deja făcute.
         const insRes = await db.query(
           `INSERT IGNORE INTO trips
-             (route_schedule_id, route_id, vehicle_id, date, time, disabled)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [s.schedule_id, s.route_id, defaultVehicleId, dateStr, s.departure, disabled]
+             (route_schedule_id, route_id, date, time, disabled)
+           VALUES (?, ?, ?, ?, ?)`,
+          [s.schedule_id, s.route_id, dateStr, s.departure, disabled]
         );
         // affectedRows = 1 ⇒ INSERT efectuat, 0 ⇒ rând existent (ignorăm)
         const affected = insRes.raw?.affectedRows ?? 0;

@@ -678,11 +678,10 @@ router.post('/', async (req, res) => {
     const tripRes = await db.query(
       `SELECT id, boarding_started FROM trips
         WHERE route_schedule_id = ?
-          AND vehicle_id = ?
           AND date = DATE(?)
           AND TIME(time) = TIME(?)
         LIMIT 1`,
-      [resolvedScheduleId, vehicle_id, date, canonicalTime]
+      [resolvedScheduleId, date, canonicalTime]
     );
     if (tripRes.rows.length > 0) {
       const existingTrip = tripRes.rows[0];
@@ -692,13 +691,41 @@ router.post('/', async (req, res) => {
         }
       }
       trip_id = existingTrip.id;
+      const { rows: tvRows } = await db.query(
+        `SELECT id, is_primary FROM trip_vehicles WHERE trip_id = ? AND vehicle_id = ? LIMIT 1`,
+        [trip_id, vehicle_id]
+      );
+      if (!tvRows.length) {
+        await db.query(
+          `INSERT INTO trip_vehicles (trip_id, vehicle_id, is_primary)
+           VALUES (?, ?, 0)
+           ON DUPLICATE KEY UPDATE is_primary = VALUES(is_primary)`,
+          [trip_id, vehicle_id]
+        );
+        const { rows: primaryRows } = await db.query(
+          `SELECT 1 FROM trip_vehicles WHERE trip_id = ? AND is_primary = 1 LIMIT 1`,
+          [trip_id]
+        );
+        if (!primaryRows.length) {
+          await db.query(
+            `UPDATE trip_vehicles SET is_primary = 1 WHERE trip_id = ? AND vehicle_id = ?`,
+            [trip_id, vehicle_id]
+          );
+        }
+      }
     } else {
       const ins = await db.query(
-        `INSERT INTO trips (route_schedule_id, route_id, vehicle_id, date, time)
-         VALUES (?, ?, ?, ?, TIME(?))`,
-        [resolvedScheduleId, route_id, vehicle_id, date, canonicalTime]
+        `INSERT INTO trips (route_schedule_id, route_id, date, time)
+         VALUES (?, ?, ?, TIME(?))`,
+        [resolvedScheduleId, route_id, date, canonicalTime]
       );
       trip_id = ins.insertId;
+      await db.query(
+        `INSERT INTO trip_vehicles (trip_id, vehicle_id, is_primary)
+         VALUES (?, ?, 1)
+         ON DUPLICATE KEY UPDATE is_primary = VALUES(is_primary)`,
+        [trip_id, vehicle_id]
+      );
     }
 
     // 3) pasageri (creăm/actualizăm rezervări, calcule, plăți)
