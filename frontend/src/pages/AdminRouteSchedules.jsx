@@ -31,7 +31,7 @@ export default function AdminRouteSchedules({ routeId }) {
             // încărcăm simultan operatorii și orele
             const [opsRes, schRes] = await Promise.all([
                 fetch('/api/operators').then(r => r.json()),
-                fetch(`/api/routes/${routeId}/schedules`).then(r => r.json()),
+                fetch(`/api/routes/${routeId}/schedules?include_defaults=1`).then(r => r.json()),
 
             ]);
             const normOps = (Array.isArray(opsRes) ? opsRes : []).map(o => ({
@@ -339,6 +339,12 @@ export default function AdminRouteSchedules({ routeId }) {
                                             : it.operator_id
                                                 ? <span className="ml-2 text-xs text-gray-500">(operator #{it.operator_id})</span>
                                                 : null}
+                                        {it.default_vehicle_name && (
+                                            <span className="ml-2 text-xs text-indigo-600">
+                                                vehicul implicit: {it.default_vehicle_name}
+                                                {it.default_vehicle_plate ? ` (${it.default_vehicle_plate})` : ''}
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <button
