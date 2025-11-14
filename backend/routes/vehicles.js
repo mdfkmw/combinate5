@@ -344,14 +344,22 @@ router.delete('/:id', requireRole('admin','operator_admin'), async (req, res) =>
     }
 
     // 1) Blochează ștergerea dacă e folosit pe curse
-    const [[t1]] = await conn.query(`SELECT COUNT(*) AS cnt FROM trips WHERE vehicle_id = ?`, [vehId]);
-    const [[t2]] = await conn.query(`SELECT COUNT(*) AS cnt FROM trip_vehicles WHERE vehicle_id = ?`, [vehId]);
-    if (Number(t1.cnt) > 0 || Number(t2.cnt) > 0) {
+    const [[usage]] = await conn.query(
+      `SELECT
+          SUM(CASE WHEN is_primary = 1 THEN 1 ELSE 0 END) AS primary_cnt,
+          SUM(CASE WHEN is_primary = 0 THEN 1 ELSE 0 END) AS duplicate_cnt
+         FROM trip_vehicles
+        WHERE vehicle_id = ?`,
+      [vehId]
+    );
+    const primaryCnt = Number(usage?.primary_cnt || 0);
+    const duplicateCnt = Number(usage?.duplicate_cnt || 0);
+    if (primaryCnt > 0 || duplicateCnt > 0) {
       await conn.rollback();
       return res.status(409).json({
         error: 'Mașina este asignată pe una sau mai multe curse. Eliberează mașina din curse înainte de ștergere.',
-        trips_primary: Number(t1.cnt),
-        trips_duplicate: Number(t2.cnt),
+        trips_primary: primaryCnt,
+        trips_duplicate: duplicateCnt,
       });
     }
 
