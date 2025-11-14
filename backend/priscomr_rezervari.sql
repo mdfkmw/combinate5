@@ -11863,6 +11863,40 @@ CREATE TABLE `route_schedules` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
+-- Table structure for table `route_schedule_default_vehicles`
+--
+
+CREATE TABLE `route_schedule_default_vehicles` (
+  `route_schedule_id` int(11) NOT NULL,
+  `vehicle_id` int(11) NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`route_schedule_id`),
+  KEY `idx_rsdv_vehicle` (`vehicle_id`),
+  CONSTRAINT `fk_rsdv_schedule` FOREIGN KEY (`route_schedule_id`) REFERENCES `route_schedules` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_rsdv_vehicle` FOREIGN KEY (`vehicle_id`) REFERENCES `vehicles` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Table structure for table `route_schedule_seat_blocks`
+--
+
+CREATE TABLE `route_schedule_seat_blocks` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `route_schedule_id` int(11) NOT NULL,
+  `vehicle_id` int(11) NOT NULL,
+  `seat_id` int(11) NOT NULL,
+  `block_online` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_rssb_schedule_seat` (`route_schedule_id`,`seat_id`),
+  KEY `idx_rssb_vehicle` (`vehicle_id`),
+  CONSTRAINT `fk_rssb_schedule` FOREIGN KEY (`route_schedule_id`) REFERENCES `route_schedules` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_rssb_vehicle` FOREIGN KEY (`vehicle_id`) REFERENCES `vehicles` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_rssb_seat` FOREIGN KEY (`seat_id`) REFERENCES `seats` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
 -- Dumping data for table `route_schedules`
 --
 
